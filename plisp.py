@@ -1,66 +1,69 @@
 
-import sys
 
-class Symbol(str):
-    pass
+import math
+import operator as op
 
-def Sym(s, symbol_table={}):
-    if s not in symbol_table:
-        symbol_table[s] = Symbol(s)
-    return symbol_table[s]
 
-_quote, _if, _set, _define, _lambda, _begin, _definemacro = map(Sym,
-    "quote if, set! define lambda begin define-macro".split())
+Symbol = str
+Number = (int,float)
+Atom = (Symbol,Number)
+List = list
+Exp = (Atom,List)
+Env = dict
 
-_quasiquote, _unquote, _unquotesplicing = map(Sym,
-    "quasiquote unquote unquote-splicing".split())
 
-class InPort(object):
-    tokenizer = r'''\s*(,@|[('`,)]|"(?:[\\].|[^\\"])*"|;.*|[^\s('"`,;)]*)(.*)'''
-    def __init__(self,file):
-        self.file = file
-        self.line = ""
-    def next_token(self):
-        while True:
-            if self.line == "":
-                self.line = self.file.readline()
-            if self.line == "":
-                return eof_object
-            token, self.line = re.match(InPort.tokenizer,self.line).groups()
-            if token != "" and not token.startswith(";"):
-                return token
+def standard_env():
+    env = Env()
+    env.update(vars(math))
+    return env
 
-eof_object = Symbol('#<eof-object>') # Note: uninterned; can't be rea
+def tokenize(s):
+    return s.replace('(', ' ( ').replace(')', ' ) ').split()
 
-# TODO: not done
-def read(inport):
-    def read_ahead(token):
-        pass
+def read_from_tokens(tokens):
+    if len(tokens)==0:
+        raise SyntaxError("unexpected EOF")
+    token = tokens.pop()
+    if token =="(":
+        L = []
+        while tokens[0] != ")":
+            L.append(read_from_tokens(tokens))
+        tokens.pop(0)
+        return L
+    elif token == ")":
+        raise SyntaxError("unexpected )")
+    else:
+        return atom(token)
 
-quotes = { "`" : _quasiquote, "'" : _quote, ",":_unquote, ",@":_unquotesplicing}
+def parse(s):
+    return read_from_tokens(tokenize(s))
 
-# TODO: not done
 def atom(token):
-    pass
-
-# TODO: not done
-def to_string(x):
-    if x is True:
-        return "#t"
-    elif x is False:
-        return "#f"
-    elif isa(x, Symbol):
-        return x
-
-
-def repl(prompt=">tlisp> ", inport=InPort(sys.stdin), out=sys.stdout):
-    sys.stderr.write("tlisp version 0\n")
-    while True:
+    try:
+        return int(token)
+    except ValueError:
         try:
-            if prompt:
-                sys.stderr.write(prompt)
-        except Exception as e:
-            print "%s : %s" % (type(e).__name__, e)
+            return float(token)
+        except ValueError:
+            return Symbol(token)
+
+def eval(x, env):
+    if isinstance(x,Symbol):
+        return env[x]
+    elif not isinstance(x,Number):
+        return x
+    elif x[0] == "if":
+        (_,test,conseq,alt)=x
+        exp = (conseq if eval(test,env) else alt)
+        return eval(exp,env)
+    elif x[0] == "define":
+        (_,symbol,exp) = x
+        env[symbol] = eval(exp,env)
+    else:
+        proc = eval(x[0],env)
+        args = [eval(arg,env) for arg in x[1:]]
+        return proc(*args)
 
 
 
+eval(parse("(begin (define r 10) (* pi (* r r)))"))
